@@ -218,7 +218,6 @@ class Hy3DVAELoader:
             geo_decoder_ln_post = False
             mlp_expand_ratio = 1
             downsample_ratio = 2
-            
 
         config = {
             'num_latents': 3072,
@@ -422,12 +421,14 @@ class DownloadAndLoadHy3DPaintModel:
         for name, param in unet.named_parameters():
             set_module_tensor_to_device(unet, name, device=offload_device, dtype=torch_dtype, value=unet_sd[name])
 
-        vae = AutoencoderKL.from_pretrained(model_path, subfolder="vae", device=device, torch_dtype=torch_dtype)
+        is_turbo = "turbo" in model.lower()
+
+        vae = AutoencoderKL.from_pretrained(model_path, subfolder="vae", device=device, torch_dtype=torch_dtype)    
         clip = CLIPTextModel.from_pretrained(model_path, subfolder="text_encoder", torch_dtype=torch_dtype)
         tokenizer = CLIPTokenizer.from_pretrained(model_path, subfolder="tokenizer")
         scheduler = EulerAncestralDiscreteScheduler.from_pretrained(model_path, subfolder="scheduler")
         feature_extractor = CLIPImageProcessor.from_pretrained(model_path, subfolder="feature_extractor")
-
+              
         pipeline = HunyuanPaintPipeline(
             unet=unet,
             vae = vae,
@@ -436,6 +437,7 @@ class DownloadAndLoadHy3DPaintModel:
             scheduler=scheduler,
             feature_extractor=feature_extractor,
             )
+        pipeline.set_turbo(is_turbo)
         
         if compile_args is not None:
             pipeline.to(device)
@@ -831,7 +833,14 @@ class Hy3DSampleMultiView:
         generator=torch.Generator(device=pipeline.device).manual_seed(seed)
 
         input_image = ref_image.permute(0, 3, 1, 2).unsqueeze(0).to(device)
-
+        
+        # Optional: Force tensors to GPU (uncomment if on CPU)
+        input_image = input_image.to('cuda')
+        normal_maps = normal_maps.to('cuda')
+        position_maps = position_maps.to('cuda')
+        if samples is not None:
+            samples["samples"] = samples["samples"].to('cuda')
+    
         device = mm.get_torch_device()
 
         if camera_config is None:
